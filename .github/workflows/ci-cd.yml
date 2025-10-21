@@ -177,38 +177,37 @@ jobs:
         script: |
           echo "🚀 Starting ELMS deployment..."
           
-          # Stop and remove existing containers
+          # Stop and remove existing containers (but keep MySQL)
           echo "Stopping existing containers..."
-          docker stop elms-backend elms-frontend elms-database || true
-          docker rm elms-backend elms-frontend elms-database || true
+          docker stop elms-backend elms-frontend || true
+          docker rm elms-backend elms-frontend || true
           
           # Remove old images to free space
           echo "Cleaning up old images..."
           docker image prune -f
           
-          # Check if MySQL is running on port 3306
+          # Check for existing MySQL containers and get the correct name
           echo "Checking for existing MySQL services..."
-          if netstat -tuln | grep -q ":3306 "; then
-            echo "⚠️  MySQL is already running on port 3306. Checking if we can use it..."
+          MYSQL_CONTAINER=$(docker ps --format "{{.Names}}" | grep -E "(mysql|elms-database|elms-mysql)" | head -1)
+          
+          if [ ! -z "$MYSQL_CONTAINER" ]; then
+            echo "✅ Found existing MySQL container: $MYSQL_CONTAINER"
+            MYSQL_HOST="$MYSQL_CONTAINER"
             
-            # Try to connect to existing MySQL and create database if needed
-            if command -v mysql &> /dev/null; then
-              echo "Attempting to use existing MySQL instance..."
-              mysql -h localhost -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS empdb;" || \
-              mysql -h localhost -u root -e "CREATE DATABASE IF NOT EXISTS empdb;" || \
-              echo "⚠️  Could not create database in existing MySQL. Continuing anyway..."
-            fi
+            # Ensure database exists in the running MySQL container
+            echo "Ensuring empdb database exists..."
+            docker exec $MYSQL_CONTAINER mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS empdb;" 2>/dev/null || \
+            docker exec $MYSQL_CONTAINER mysql -u root -e "CREATE DATABASE IF NOT EXISTS empdb;" 2>/dev/null || \
+            echo "⚠️  Could not create database. Continuing with existing setup..."
             
-            # Use localhost MySQL instead of container
-            MYSQL_HOST="localhost"
           else
-            echo "Starting new MySQL container..."
+            echo "No existing MySQL found. Starting new MySQL container..."
             # Create network if it doesn't exist
             docker network create elms-network || true
             
             # Start MySQL Database
             docker run -d \
-              --name elms-database \
+              --name elms-mysql \
               --network elms-network \
               -e MYSQL_ROOT_PASSWORD=rootpassword \
               -e MYSQL_DATABASE=empdb \
@@ -217,18 +216,18 @@ jobs:
               -p 3306:3306 \
               mysql:8.0
             
+            MYSQL_HOST="elms-mysql"
+            
             # Wait for MySQL to be ready
             echo "Waiting for MySQL to be ready..."
             for i in {1..30}; do
-              if docker exec elms-database mysqladmin ping -h localhost --silent; then
+              if docker exec elms-mysql mysqladmin ping -h localhost --silent; then
                 echo "MySQL is ready!"
                 break
               fi
               echo "Waiting for MySQL... ($i/30)"
               sleep 2
             done
-            
-            MYSQL_HOST="elms-database"
           fi
           
           # Create network if it doesn't exist
@@ -239,7 +238,7 @@ jobs:
           docker pull ${{ env.DOCKERHUB_USERNAME }}/elms-backend:latest
           docker pull ${{ env.DOCKERHUB_USERNAME }}/elms-frontend:latest
           
-          # Start Backend with appropriate MySQL host
+          # Start Backend with the correct MySQL host
           echo "Starting backend container with MySQL host: $MYSQL_HOST"
           docker run -d \
             --name elms-backend \
@@ -260,13 +259,21 @@ jobs:
             -p 80:80 \
             ${{ env.DOCKERHUB_USERNAME }}/elms-frontend:latest
           
-          # Health checks with longer wait time
+          # Health checks with appropriate timing
           echo "Performing health checks..."
-          sleep 45
+          echo "Waiting for containers to initialize..."
+          sleep 30
           
-          # Check backend health with more attempts
+          # Check if backend container is running first
+          if ! docker ps | grep -q elms-backend; then
+            echo "❌ Backend container is not running! Checking logs..."
+            docker logs elms-backend --tail 20
+            exit 1
+          fi
+          
+          # Check backend health with fewer but longer waits
           backend_healthy="false"
-          for i in {1..15}; do
+          for i in {1..8}; do
             if curl -f http://localhost:8080/actuator/health > /dev/null 2>&1; then
               echo "✅ Backend health check passed"
               backend_healthy="true"
@@ -276,14 +283,14 @@ jobs:
               backend_healthy="true"
               break
             fi
-            echo "Backend health check attempt $i/15..."
-            sleep 8
+            echo "Backend health check attempt $i/8..."
+            sleep 15
           done
           
           # Check backend logs if health check fails
           if [ "$backend_healthy" == "false" ]; then
             echo "🔍 Backend health check failed. Checking logs..."
-            docker logs elms-backend --tail 20
+            docker logs elms-backend --tail 30
           fi
           
           # Check frontend
@@ -297,9 +304,14 @@ jobs:
             docker logs elms-frontend --tail 10
           fi
           
-          # Show running containers
+          # Show running containers for debugging
           echo "📊 Current container status:"
           docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          
+          # Show network information
+          echo "🌐 Network connections:"
+          docker network ls
+          docker network inspect elms-network | grep -A 10 "Containers" || true
           
           # Final status
           if [ "$backend_healthy" == "true" ] && [ "$frontend_healthy" == "true" ]; then
@@ -312,5 +324,4 @@ jobs:
             echo "   - Backend API: http://${{ env.SERVER_HOST }}:8080"
             echo "   - Frontend: http://${{ env.SERVER_HOST }}"
             echo "📝 Check the logs above for troubleshooting"
-            # Don't exit with error to allow partial deployments
           fi
