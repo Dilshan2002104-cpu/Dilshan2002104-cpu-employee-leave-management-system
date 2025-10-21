@@ -1,0 +1,162 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  pr-quality-gate:
+    runs-on: ubuntu-latest
+    name: PR Quality Gate
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: empdb_test
+          MYSQL_USER: elms_user
+          MYSQL_PASSWORD: elms_password
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping -h localhost" --health-interval=10s --health-timeout=5s --health-retries=10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    # Frontend Checks
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Frontend Lint
+      working-directory: ./frontend
+      run: npm run lint
+
+    - name: Frontend Build Check
+      working-directory: ./frontend
+      run: npm run build
+
+    # Backend Checks
+    - name: Wait for MySQL to be ready
+      run: |
+        echo "Waiting for MySQL to be ready..."
+        for i in {1..30}; do
+          if mysqladmin ping -h 127.0.0.1 -P 3306 -u root -prootpassword --silent; then
+            echo "MySQL is ready!"
+            break
+          fi
+          echo "Attempt $i: MySQL not ready yet, waiting..."
+          sleep 2
+        done
+
+    - name: Setup Test Database
+      run: |
+        mysql -h 127.0.0.1 -P 3306 -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS empdb_test;"
+        mysql -h 127.0.0.1 -P 3306 -u root -prootpassword -e "GRANT ALL PRIVILEGES ON empdb_test.* TO 'elms_user'@'%';"
+        mysql -h 127.0.0.1 -P 3306 -u root -prootpassword -e "FLUSH PRIVILEGES;"
+
+    - name: Make Maven Wrapper Executable
+      working-directory: ./ELMS
+      run: chmod +x ./mvnw
+
+    - name: Backend Compile
+      working-directory: ./ELMS
+      run: ./mvnw compile
+
+    - name: Backend Tests
+      working-directory: ./ELMS
+      env:
+        SPRING_PROFILES_ACTIVE: test
+        SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/empdb_test
+        SPRING_DATASOURCE_USERNAME: elms_user
+        SPRING_DATASOURCE_PASSWORD: elms_password
+      run: ./mvnw test
+
+    # Security Checks
+    - name: Frontend Security Audit
+      working-directory: ./frontend
+      run: npm audit --audit-level=high
+
+    - name: Backend Dependency Check
+      working-directory: ./ELMS
+      run: ./mvnw dependency:tree
+
+    # Docker Build Verification
+    - name: Verify Docker Builds
+      run: |
+        echo "Building Backend Docker image..."
+        docker build -t elms-backend-test ./ELMS
+        
+        echo "Building Frontend Docker image..."
+        docker build -t elms-frontend-test ./frontend
+        
+        echo "✅ Docker builds successful"
+
+  # Comment on PR with results
+  pr-comment:
+    needs: pr-quality-gate
+    runs-on: ubuntu-latest
+    name: PR Results Comment
+    if: always() && github.event_name == 'pull_request'
+    
+    steps:
+    - name: Comment PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { owner, repo, number } = context.issue;
+          const conclusion = '${{ needs.pr-quality-gate.result }}';
+          
+          let message = '';
+          if (conclusion === 'success') {
+            message = `## ✅ Quality Gate Passed
+            
+            Your pull request has passed all quality checks:
+            
+            - ✅ Frontend build verification
+            - ✅ Backend compilation and tests  
+            - ✅ Security dependency audits
+            - ✅ Docker build verification
+            
+            **Ready for review and merge!** 🚀`;
+          } else {
+            message = `## ❌ Quality Gate Failed
+            
+            Your pull request has failed quality checks:
+            
+            Please check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and fix the issues.
+            
+            **Common issues:**
+            - Build errors
+            - Backend test failures
+            - Backend compilation errors
+            - Security vulnerabilities
+            
+            Fix these issues and push again to re-run checks.`;
+          }
+          
+          github.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: number,
+            body: message
+          });
