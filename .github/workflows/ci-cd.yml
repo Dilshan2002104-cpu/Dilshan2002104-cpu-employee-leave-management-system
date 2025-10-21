@@ -195,22 +195,42 @@ jobs:
             MYSQL_HOST="$MYSQL_CONTAINER"
             
             # Create network if it doesn't exist
-            docker network create elms-network || true
+            if ! docker network ls | grep -q elms-network; then
+              echo "Creating elms-network..."
+              docker network create elms-network
+            else
+              echo "elms-network already exists"
+            fi
             
             # Connect existing MySQL container to elms-network if not already connected
             echo "Connecting MySQL container to elms-network..."
             docker network connect elms-network $MYSQL_CONTAINER 2>/dev/null || echo "MySQL already connected to network or connection failed"
             
             # Ensure database exists in the running MySQL container
-            echo "Ensuring empdb database exists..."
-            docker exec $MYSQL_CONTAINER mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS empdb;" 2>/dev/null || \
-            docker exec $MYSQL_CONTAINER mysql -u root -e "CREATE DATABASE IF NOT EXISTS empdb;" 2>/dev/null || \
-            echo "⚠️  Could not create database. Continuing with existing setup..."
+            echo "Ensuring empdb database and user exist..."
+            docker exec $MYSQL_CONTAINER mysql -u root -prootpassword -e "
+              CREATE DATABASE IF NOT EXISTS empdb;
+              CREATE USER IF NOT EXISTS 'elms_user'@'%' IDENTIFIED BY 'elms_password';
+              GRANT ALL PRIVILEGES ON empdb.* TO 'elms_user'@'%';
+              FLUSH PRIVILEGES;
+            " 2>/dev/null || \
+            docker exec $MYSQL_CONTAINER mysql -u root -e "
+              CREATE DATABASE IF NOT EXISTS empdb;
+              CREATE USER IF NOT EXISTS 'elms_user'@'%' IDENTIFIED BY 'elms_password';
+              GRANT ALL PRIVILEGES ON empdb.* TO 'elms_user'@'%';
+              FLUSH PRIVILEGES;
+            " 2>/dev/null || \
+            echo "⚠️  Could not create database/user. Continuing with existing setup..."
             
           else
             echo "No existing MySQL found. Starting new MySQL container..."
             # Create network if it doesn't exist
-            docker network create elms-network || true
+            if ! docker network ls | grep -q elms-network; then
+              echo "Creating elms-network..."
+              docker network create elms-network
+            else
+              echo "elms-network already exists"
+            fi
             
             # Start MySQL Database
             docker run -d \
@@ -237,8 +257,13 @@ jobs:
             done
           fi
           
-          # Create network if it doesn't exist
-          docker network create elms-network || true
+          # Ensure network exists before starting containers
+          if ! docker network ls | grep -q elms-network; then
+            echo "Creating elms-network..."
+            docker network create elms-network
+          else
+            echo "elms-network already exists"
+          fi
           
           # Pull latest images
           echo "Pulling latest Docker images..."
@@ -254,16 +279,19 @@ jobs:
             --network elms-network \
             -e SPRING_PROFILES_ACTIVE=production \
             -e SPRING_DATASOURCE_URL=jdbc:mysql://$MYSQL_HOST:3306/empdb \
-            -e SPRING_DATASOURCE_USERNAME=root \
-            -e SPRING_DATASOURCE_PASSWORD=rootpassword \
+            -e SPRING_DATASOURCE_USERNAME=elms_user \
+            -e SPRING_DATASOURCE_PASSWORD=elms_password \
             -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
             -p 8080:8080 \
             ${{ env.DOCKERHUB_USERNAME }}/elms-backend:latest
           
           # Check if backend started successfully, if not try with localhost
-          sleep 10
-          if ! docker ps | grep -q elms-backend; then
-            echo "🔄 Backend failed with container name, trying with localhost..."
+          sleep 5
+          if docker ps | grep -q "elms-backend.*Up"; then
+            echo "✅ Backend container started successfully"
+          else
+            echo "🔄 Backend failed to start, checking logs and trying with localhost..."
+            docker logs elms-backend --tail 10 2>/dev/null || echo "No logs available yet"
             docker rm elms-backend || true
             
             docker run -d \
@@ -272,8 +300,8 @@ jobs:
               --add-host=host.docker.internal:host-gateway \
               -e SPRING_PROFILES_ACTIVE=production \
               -e SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/empdb \
-              -e SPRING_DATASOURCE_USERNAME=root \
-              -e SPRING_DATASOURCE_PASSWORD=rootpassword \
+              -e SPRING_DATASOURCE_USERNAME=elms_user \
+              -e SPRING_DATASOURCE_PASSWORD=elms_password \
               -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
               -p 8080:8080 \
               ${{ env.DOCKERHUB_USERNAME }}/elms-backend:latest
