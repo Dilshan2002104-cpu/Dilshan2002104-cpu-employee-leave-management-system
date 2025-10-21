@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Users, Clock, CheckCircle, Calendar, MoreVertical, Search, Bell, Settings } from 'lucide-react';
 import { useEffect } from 'react';
+import { API_ENDPOINTS } from "../../config/api";
 
 
 const DepartmentHeadDashboard = () => {
@@ -9,7 +10,7 @@ const DepartmentHeadDashboard = () => {
 useEffect(() => {
   const fetchLeaveRequests = async () => {
     try {
-      const response = await fetch('http://localhost:8080/api/leaves/all');
+      const response = await fetch(API_ENDPOINTS.LEAVES_ALL);
       const data = await response.json();
 
       const headdepartment = sessionStorage.getItem('headDepartement');
@@ -44,7 +45,7 @@ useEffect(() => {
 const handleUpdateStatus = async (id, newStatus) => {
   try {
     const response = await fetch(
-      `http://localhost:8080/api/leaves/update-status/${id}?status=${newStatus}`,
+      API_ENDPOINTS.LEAVES_UPDATE_STATUS(id, newStatus),
       { method: 'PUT' }
     );
     if (!response.ok) throw new Error('Failed to update status');

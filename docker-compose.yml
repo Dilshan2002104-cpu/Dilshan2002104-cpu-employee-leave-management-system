@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: elms-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: empdb
+      MYSQL_USER: elms_user
+      MYSQL_PASSWORD: elms_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - elms-network
+    restart: unless-stopped
+
+  # Backend Service
+  backend:
+    build:
+      context: ./ELMS
+      dockerfile: Dockerfile
+    container_name: elms-backend
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: empdb
+      DB_USERNAME: elms_user
+      DB_PASSWORD: elms_password
+      SPRING_PROFILES_ACTIVE: aws
+    ports:
+      - "8080:8080"
+    depends_on:
+      - mysql
+    networks:
+      - elms-network
+    restart: unless-stopped
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: elms-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - elms-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  elms-network:
+    driver: bridge

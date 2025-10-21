@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { API_ENDPOINTS } from "../../config/api";
 
 export default function EmployeeLoginForm() {
   const [formData, setFormData] = useState({
@@ -56,7 +57,7 @@ export default function EmployeeLoginForm() {
 
     try {
       const response = await axios.post(
-        'http://localhost:8080/api/employees/login',
+        API_ENDPOINTS.EMPLOYEE_LOGIN,
         {
           employeeId: formData.employeeId,
           password: formData.password

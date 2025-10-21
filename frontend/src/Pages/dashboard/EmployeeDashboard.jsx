@@ -15,6 +15,7 @@ import {
   Settings,
 } from "lucide-react";
 import axios from "axios";
+import { API_ENDPOINTS } from "../../config/api";
 
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -25,7 +26,7 @@ export default function EmployeeDashboard() {
     if (!employeeId) return;
 
     axios
-      .get(`http://localhost:8080/api/leaves/by-employee/${employeeId}`)
+      .get(API_ENDPOINTS.LEAVES_BY_EMPLOYEE(employeeId))
       .then((response) => {
         const requests = response.data.map((req, idx) => ({
           id: req.id || idx + 1,
@@ -77,7 +78,6 @@ export default function EmployeeDashboard() {
     reason: "",
   });
 
-  const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const employeeData = {
@@ -128,7 +128,7 @@ export default function EmployeeDashboard() {
 
       // Make API call using axios
       const response = await axios.post(
-        "http://localhost:8080/api/leaves/submit",
+        API_ENDPOINTS.LEAVES_SUBMIT,
         requestPayload,
         {
           headers: {
@@ -160,7 +160,6 @@ export default function EmployeeDashboard() {
 
       // Reset form
       setNewLeaveRequest({ type: "", startDate: "", endDate: "", reason: "" });
-      setShowLeaveForm(false);
       alert("Leave request submitted successfully!");
     } catch (error) {
       console.error("Error submitting leave request:", error);
@@ -274,7 +273,7 @@ export default function EmployeeDashboard() {
               { id: "request", label: "Request Leave", icon: Plus },
               { id: "history", label: "Leave History", icon: FileText },
               { id: "balance", label: "Leave Balance", icon: TrendingUp },
-            ].map(({ id, label, icon: Icon }) => (
+            ].map(({ id, label, icon: Icon }) => ( // eslint-disable-line no-unused-vars
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}

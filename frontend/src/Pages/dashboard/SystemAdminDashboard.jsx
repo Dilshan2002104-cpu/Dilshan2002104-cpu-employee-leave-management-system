@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {useEffect } from 'react';
+import { API_ENDPOINTS } from "../../config/api";
 
 
 import {
@@ -220,7 +221,6 @@ export default function SystemAdminDashboard() {
 
     // State for department heads
     const [departmentHeads, setDepartmentHeads] = useState([]);
-    const [loading, setLoading] = useState(false);
 
     
 
@@ -277,7 +277,7 @@ export default function SystemAdminDashboard() {
         console.log('Toggling user status:', userId);
     };
 
-    const StatCard = ({ icon: Icon, title, value, color }) => (
+    const StatCard = ({ icon: Icon, title, value, color }) => ( // eslint-disable-line no-unused-vars
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
             <div className="flex items-center">
                 <div className={`p-3 rounded-full ${color}`}>
@@ -296,15 +296,14 @@ export default function SystemAdminDashboard() {
     }, []);
 
     const fetchDepartmentHeads = async () => {
-        setLoading(true);
         try {
-            const res = await fetch('http://localhost:8080/api/heads/all-heads');
+            const res = await fetch(API_ENDPOINTS.HEADS_ALL);
             const data = await res.json();
             setDepartmentHeads(data);
         } catch (error) {
+            console.error('Failed to fetch department heads:', error);
             alert('Failed to fetch department heads');
         }
-        setLoading(false);
     };
 
     const handleCreateUser = async () => {
@@ -313,7 +312,7 @@ export default function SystemAdminDashboard() {
             return;
         }
         try {
-            const res = await fetch('http://localhost:8080/api/heads/create', {
+            const res = await fetch(API_ENDPOINTS.HEADS_CREATE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -330,6 +329,7 @@ export default function SystemAdminDashboard() {
             setShowCreateModal(false);
             setNewUser({ employeeId: '', name: '', department: '', password: '', confirmPassword: '' });
         } catch (error) {
+            console.error('Failed to create user:', error);
             alert('Failed to create user');
         }
     };

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import { Navigate, useNavigate } from "react-router-dom";
+import { API_ENDPOINTS } from "../../config/api";
 
 export default function EmployeeRegistrationForm() {
   const [formData, setFormData] = useState({
@@ -137,7 +138,7 @@ export default function EmployeeRegistrationForm() {
     };
 
     try {
-      await axios.post("http://localhost:8080/api/employees/register", registrationData);
+      await axios.post(API_ENDPOINTS.EMPLOYEE_REGISTER, registrationData);
       setRegistrationSuccess(true);
       showToast("Employee registered successfully!", "success");
 

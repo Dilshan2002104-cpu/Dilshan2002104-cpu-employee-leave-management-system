@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Shield, Lock, Eye, EyeOff, Crown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { API_ENDPOINTS } from "../../config/api";
 
 export default function HeadsLoginForm() {
   const [formData, setFormData] = useState({
@@ -51,7 +52,7 @@ const handleSubmit = async (e) => {
   setIsSubmitting(true);
 
   try {
-    const response = await fetch('http://localhost:8080/api/heads/login', {
+    const response = await fetch(API_ENDPOINTS.HEADS_LOGIN, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -78,6 +79,7 @@ const handleSubmit = async (e) => {
 
 
   } catch (error) {
+    console.error('Login error:', error);
     setErrors({ general: 'Login failed. Please try again.' });
   } finally {
     setIsSubmitting(false);
