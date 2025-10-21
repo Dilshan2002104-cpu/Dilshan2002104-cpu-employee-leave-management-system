@@ -194,6 +194,13 @@ jobs:
             echo "✅ Found existing MySQL container: $MYSQL_CONTAINER"
             MYSQL_HOST="$MYSQL_CONTAINER"
             
+            # Create network if it doesn't exist
+            docker network create elms-network || true
+            
+            # Connect existing MySQL container to elms-network if not already connected
+            echo "Connecting MySQL container to elms-network..."
+            docker network connect elms-network $MYSQL_CONTAINER 2>/dev/null || echo "MySQL already connected to network or connection failed"
+            
             # Ensure database exists in the running MySQL container
             echo "Ensuring empdb database exists..."
             docker exec $MYSQL_CONTAINER mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS empdb;" 2>/dev/null || \
@@ -240,6 +247,8 @@ jobs:
           
           # Start Backend with the correct MySQL host
           echo "Starting backend container with MySQL host: $MYSQL_HOST"
+          
+          # Try with container name first, fallback to localhost if network issues
           docker run -d \
             --name elms-backend \
             --network elms-network \
@@ -250,6 +259,25 @@ jobs:
             -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
             -p 8080:8080 \
             ${{ env.DOCKERHUB_USERNAME }}/elms-backend:latest
+          
+          # Check if backend started successfully, if not try with localhost
+          sleep 10
+          if ! docker ps | grep -q elms-backend; then
+            echo "🔄 Backend failed with container name, trying with localhost..."
+            docker rm elms-backend || true
+            
+            docker run -d \
+              --name elms-backend \
+              --network elms-network \
+              --add-host=host.docker.internal:host-gateway \
+              -e SPRING_PROFILES_ACTIVE=production \
+              -e SPRING_DATASOURCE_URL=jdbc:mysql://host.docker.internal:3306/empdb \
+              -e SPRING_DATASOURCE_USERNAME=root \
+              -e SPRING_DATASOURCE_PASSWORD=rootpassword \
+              -e SPRING_JPA_HIBERNATE_DDL_AUTO=update \
+              -p 8080:8080 \
+              ${{ env.DOCKERHUB_USERNAME }}/elms-backend:latest
+          fi
           
           # Start Frontend  
           echo "Starting frontend container..."
